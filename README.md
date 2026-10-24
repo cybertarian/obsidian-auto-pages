@@ -47,3 +47,11 @@ any watched note, and an optional markdown log of creation events.
 
 `main.js` at the repository root is the production build (plain CommonJS, single file,
 no build step required).
+## Verifying release provenance
+
+Release assets are attested with SLSA build provenance (via GitHub Actions). To verify that a
+downloaded asset was built from this repository:
+
+```bash
+gh attestation verify main.js --repo cybertarian/obsidian-auto-pages
+```
