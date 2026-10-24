@@ -32,6 +32,7 @@ jobs:
       - name: Attest main.js
         uses: actions/attest-build-provenance@v4
         with:
+          push-to-registry: false
           subject-name: main.js
           subject-digest: "sha256:${{ steps.d.outputs.main }}"
           attach-to-release: true
@@ -39,6 +40,7 @@ jobs:
       - name: Attest manifest.json
         uses: actions/attest-build-provenance@v4
         with:
+          push-to-registry: false
           subject-name: manifest.json
           subject-digest: "sha256:${{ steps.d.outputs.manifest }}"
           attach-to-release: true
