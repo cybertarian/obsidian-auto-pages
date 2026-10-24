@@ -1,7 +1,7 @@
 {
   "id": "autopage",
   "name": "Auto Pages",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.14.5",
   "description": "Rule-driven auto page creation: watch folders, read a frontmatter property, and create a matching page in a target folder.",
   "author": "cybertarian",

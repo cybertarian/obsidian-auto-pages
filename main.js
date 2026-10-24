@@ -1,4 +1,4 @@
-/* Auto Pages - rule-driven auto page creation (CJS, Obsidian 1.x plugin format). */
+/* Auto Pages v2.0.2 - rule-driven auto page creation (CJS, Obsidian 1.x plugin format). */
 const { Plugin, PluginSettingTab, Setting, normalizePath } = require("obsidian");
 
 const INVALID_CHARS = /[*"\\/:<>|?]/;
@@ -81,13 +81,11 @@ class AutoPagesPlugin extends Plugin {
 
   notesIn(rule) {
     const out = [];
-    const all = this.app.vault.getMarkdownFiles();
-    for (let i = 0; i < all.length; i++) {
-      const p = all[i].path;
-      const wf = rule.watchFolders || [];
-      for (let j = 0; j < wf.length; j++) {
-        if (p && p.substring(0, wf[j].length + 1) === wf[j] + '/') { out.push(all[i]); break; }
-      }
+    const wfs = rule.watchFolders || [];
+    for (let j = 0; j < wfs.length; j++) {
+      const f = this.app.vault.getAbstractFileByPath(normalizePath(wfs[j]));
+      if (!f || !f.children) continue;
+      for (let k = 0; k < f.children.length; k++) { if (f.children[k].extension === 'md') out.push(f.children[k]); }
     }
     return out;
   }
@@ -187,7 +185,7 @@ class AutoPagesPlugin extends Plugin {
     const entry = stamp + '  ' + line + '\n';
     const f = this.app.vault.getAbstractFileByPath(p);
     if (f) { self.app.vault.process(f, function (d) { return d + entry; }).catch(function () {}); }
-    else { self.app.vault.create(p, '# Auto Pages log\n\n' + entry).catch(function (e) {}); }
+    else { self.app.vault.create(p, '# Auto Pages log\n\n' + entry).catch(function () {}); }
   }
 
   saveSettings() { this.saveData(this.settings); }

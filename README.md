@@ -28,6 +28,16 @@ any watched note, and an optional markdown log of creation events.
 - Any property-driven indexing: tags-as-topics, project codes, status buckets — point a
   rule at any folder + property combination.
 
+
+## Privacy and security
+
+- No network access: the plugin makes zero network requests (no `fetch`, no telemetry, no CDN).
+  The entire source is a single file (`main.js`) you can inspect in full.
+- File access is scoped to the folders you configure: notes are only read inside your
+  watch folders, and the only writes are creating (or trashing, when enabled) pages in
+  your target folder. No vault-wide enumeration.
+- All processing happens locally inside your Obsidian app; no data leaves your device.
+
 ## Requirements
 
 - Obsidian 1.14.5 or newer (uses the current settings component API).

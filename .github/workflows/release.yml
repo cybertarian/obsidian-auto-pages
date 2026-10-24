@@ -1,0 +1,45 @@
+name: Release with provenance attestations
+
+on:
+  push:
+    tags: ['*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sanity check main.js
+        run: node --check main.js
+      - name: Prepare release (idempotent: replace stale assets)
+        id: rel
+        run: |
+          gh release delete "$GITHUB_REF_NAME" --cleanup --yes 2>/dev/null || true
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json \
+            --title "Auto Pages $GITHUB_REF_NAME" --generate-notes
+          echo "release_id=$(gh release view "$GITHUB_REF_NAME" --json id --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute asset digests
+        id: d
+        run: |
+          echo "main=$(sha256sum main.js | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "manifest=$(sha256sum manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Attest main.js
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: main.js
+          subject-digest: "sha256:${{ steps.d.outputs.main }}"
+          attach-to-release: true
+          attach-to-release-id: ${{ steps.rel.outputs.release_id }}
+      - name: Attest manifest.json
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: manifest.json
+          subject-digest: "sha256:${{ steps.d.outputs.manifest }}"
+          attach-to-release: true
+          attach-to-release-id: ${{ steps.rel.outputs.release_id }}
