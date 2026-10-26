@@ -29,6 +29,18 @@ any watched note, and an optional markdown log of creation events.
   rule at any folder + property combination.
 
 
+## Duplicate handling
+
+When a clip's `source` URL already exists in another watched note, Auto Pages detects the
+pair and applies the selected policy (settings → "Duplicate handling", default **Mark**):
+
+- **Mark** — adds a `duplicate-of: "<path>"` property to the *newer* clip's frontmatter, so
+  duplicates stay visible and can be filtered in Bases (e.g. `file.hasProperty("duplicate-of")`).
+- **Trash** — moves the newer clip to the trash (recoverable), keeping the original.
+- **Ignore** — do nothing.
+
+"Newer" is decided by the clip's `created` property (falling back to file mtime; ties are
+broken by file path), so the behaviour is deterministic and idempotent.
 ## Privacy and security
 
 - No network access: the plugin makes zero network requests (no `fetch`, no telemetry, no CDN).

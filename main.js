@@ -10,6 +10,7 @@ function defaultSettings() {
     ],
     intervalMs: 5000,
     deleteOrphanPages: false,
+    duplicateHandling: 'mark',
     logToVault: false,
     logPath: 'autopage-log.md'
   };
@@ -143,6 +144,18 @@ class AutoPagesPlugin extends Plugin {
         await this.app.vault.create(target, content).then(function () { }, function (e) { console.warn('auto-pages: create failed ' + target + ' -> ' + e.message); });
         if (this.settings.logToVault) { this.appendLog('[' + (rule.name || rule.id) + '] created ' + target + ' <- ' + file.path); }
       }
+      if (this.settings.duplicateHandling && this.settings.duplicateHandling !== 'ignore') {
+        const older = await this.findDuplicate(rule, file, text);
+        if (older) {
+          if (this.settings.duplicateHandling === 'trash') {
+            this.trashFile(file, true).then(function () {}, function (e) { console.warn('auto-pages: trash duplicate failed ' + file.path + ' -> ' + String(e && e.message || e)); });
+            if (this.settings.logToVault) { this.appendLog('[' + (rule.name || rule.id) + '] trashed duplicate clip ' + file.path + ' (dup of ' + older + ')'); }
+          } else {
+            this.markDuplicate(file, older);
+            if (this.settings.logToVault) { this.appendLog('[' + (rule.name || rule.id) + '] marked ' + file.path + ' as duplicate of ' + older); }
+          }
+        }
+      }
     } catch (e) {
       console.warn('auto-pages [' + (rule.name || rule.id) + ']: ' + file.path + ' -> ' + String(e && e.message || e));
     }
@@ -173,7 +186,7 @@ class AutoPagesPlugin extends Plugin {
         for (const key in valueSet) {
           if ((r.filePattern || '<value>.md').replace(/<value>/g, key) === child.name) { matched = true; break; }
         }
-        if (!matched) { this.app.vault.trashFile(child, false).catch(function () {}); }
+        if (!matched) { this.trashFile(child, false).catch(function () {}); }
       }
     }
   }
@@ -189,6 +202,80 @@ class AutoPagesPlugin extends Plugin {
   }
 
   saveSettings() { this.saveData(this.settings); }
+
+  trashFile(file, toArchive) {
+    const fm = this.app.fileManager;
+    if (fm && typeof fm.trashFile === 'function') { return fm.trashFile(file, toArchive); }
+    return this.trashFile(file, toArchive);
+  }
+
+  urlOf(file, text) {
+    const v = propertyValues(text, 'source');
+    for (let i = 0; i < v.length; i++) {
+      const m = String(v[i]).match(/https?:\/\/[^\s"'<>]+/);
+      if (m) return m[0];
+    }
+    return null;
+  }
+
+  createdStamp(file, cs) {
+    if (cs) { const t = Date.parse(String(cs)); if (!isNaN(t)) return t; }
+    return file && file.stat ? file.stat.mtime : 0;
+  }
+
+  async findDuplicate(rule, file, text) {
+    const url = this.urlOf(file, text);
+    if (!url) return null;
+    const self = this;
+    const fmOf = function (f) {
+      const c = self.app.metadataCache.getFileCache(f);
+      return c && c.frontmatter ? c.frontmatter : (c && c.data ? c.data : null);
+    };
+    const my = fmOf(file);
+    const myKey = this.createdStamp(file, my ? my['created'] : null);
+    const notes = this.notesIn(rule);
+    let winner = null;
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      if (n.path === file.path) continue;
+      let s = null;
+      const fm = fmOf(n);
+      if (fm) {
+        let sv = fm['source'];
+        s = Array.isArray(sv) ? sv[0] : sv;
+      } else {
+        try { const t2 = await this.app.vault.read(n); s = propertyValues(t2, 'source')[0]; } catch (e) { continue; }
+      }
+      s = Array.isArray(s) ? s[0] : s;
+      const m = s ? String(s).match(/https?:\/\/[^\s"'<>]+/) : null;
+      if (!m || m[0] !== url) continue;
+      const nfm = fmOf(n);
+      const nKey = this.createdStamp(n, nfm ? nfm['created'] : null);
+      if (nKey < myKey || (nKey === myKey && n.path < file.path)) { winner = n.path; }
+    }
+    return winner;
+  }
+
+  markDuplicate(file, olderPath) {
+    const prop = 'duplicate-of: "' + olderPath + '"';
+    this.app.vault.process(file, function (d) {
+      const eol = d.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+      const lines = d.split(eol);
+      if (lines[0] !== undefined && lines[0].trim() === '---') {
+        let fmEnd = -1;
+        for (let i = 1; i < lines.length; i++) { if (lines[i].trim() === '---') { fmEnd = i; break; } }
+        if (fmEnd > 0) {
+          let replaced = false;
+          for (let i = 1; i < fmEnd; i++) {
+            if (/^duplicate-of:/.test(lines[i])) { lines[i] = prop; replaced = true; break; }
+          }
+          if (!replaced) lines.splice(1, 0, prop);
+          return lines.join(eol);
+        }
+      }
+      return '---' + eol + prop + eol + '---' + eol + d;
+    }).catch(function (e) { console.warn('auto-pages: duplicate-mark failed ' + file.path + ' -> ' + String(e && e.message || e)); });
+  }
 
   ruleSection(el, rule) {
     const self = this;
@@ -263,6 +350,13 @@ class AutoPagesSettingTab extends PluginSettingTab {
         const n = parseInt(v, 10);
         if (!isNaN(n) && n >= 1000) { plugin.settings.intervalMs = n; plugin.saveSettings(); plugin.startTimer(); }
       });
+    });
+    const sDup = new Setting(el).setName('Duplicate handling').setDesc('When a clip\'s source URL already exists in another watched note: Mark adds a duplicate-of property to the newer clip; Trash moves the newer clip to the trash; Ignore does nothing');
+    sDup.addDropdown(function (dd) {
+      dd.addOption('ignore', 'Ignore');
+      dd.addOption('mark', 'Mark (duplicate-of)');
+      dd.addOption('trash', 'Trash the newer clip');
+      dd.setValue(String(plugin.settings.duplicateHandling || 'mark')).onChange(function (v) { plugin.settings.duplicateHandling = v; plugin.saveSettings(); });
     });
     const sOrphan = new Setting(el).setName('Delete orphan pages').setDesc('Periodically trash target pages whose value no longer appears in any watched note (off by default)');
     sOrphan.addToggle(function (tg) { tg.setValue(!!plugin.settings.deleteOrphanPages).onChange(function (v) { plugin.settings.deleteOrphanPages = v; plugin.saveSettings(); }); });
